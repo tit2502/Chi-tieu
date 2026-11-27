@@ -46,7 +46,7 @@ function json_(obj) {
 }
 
 var WRITE_ACTIONS_ = {
-  addTxn: 1, deleteTxn: 1, addTransfer: 1, setRule: 1, setBudget: 1,
+  addTxn: 1, updateTxn: 1, deleteTxn: 1, addTransfer: 1, setRule: 1, setBudget: 1,
   addTrip: 1, addGoal: 1, updateGoal: 1, deleteGoal: 1, setConfig: 1
 };
 
@@ -84,6 +84,7 @@ var ACTIONS_ = {
   bootstrap: apiBootstrap_,
   txns: apiTxns_,
   addTxn: apiAddTxn_,
+  updateTxn: apiUpdateTxn_,
   deleteTxn: apiDeleteTxn_,
   addTransfer: apiAddTransfer_,
   transfers: apiTransfers_,
@@ -430,6 +431,32 @@ function apiAddTxn_(req) {
     trip: tripFor_(dateStr, getTrips_()), src: 'app'
   });
   return { row: row, category: cat };
+}
+
+function apiUpdateTxn_(req) {
+  var sh = sheet_(S.TXN);
+  var row = +req.row;
+  if (row < TXN_FIRST_ROW || row > sh.getLastRow()) throw new Error('Dòng không tồn tại');
+  var v = sh.getRange(row, 1, 1, 9).getValues()[0];
+  if (String(v[5]) !== String((req.old || {}).desc || '') || Math.abs(num_(v[8]) - num_((req.old || {}).amount)) > 0.001) {
+    throw new Error('Dòng đã thay đổi, hãy tải lại rồi thử lại');
+  }
+  var amount = num_(req.amount);
+  if (!(amount > 0)) throw new Error('Số tiền phải lớn hơn 0');
+  var cur = String(req.currency).toUpperCase() === 'AUD' ? 'AUD' : 'VND';
+  var type = req.type === 'Thu' ? 'Thu' : 'Chi';
+  var card = getCards_().filter(function (c) { return c.name === req.card; })[0];
+  var group = card ? card.group : (cur === 'VND' ? 'Việt Nam' : 'Úc');
+  var dateStr = req.date || toDateStr_(v[0]);
+  var d = parseDate_(dateStr);
+  sh.getRange(row, 1).setValue(d);
+  sh.getRange(row, 3).setValue(weekdayLabel_(d));
+  sh.getRange(row, 4).setValue(mondayOf_(d));
+  sh.getRange(row, 5, 1, 6).setValues([[req.card || '', req.desc || '', req.category || '', type, amount, cur]]);
+  sh.getRange(row, 12, 1, 2).setValues([[req.note || '', group]]);
+  sh.getRange(row, 15).setValue(tripFor_(dateStr, getTrips_()));
+  sh.getRange(row, 9).setNumberFormat(cur === 'VND' ? '#,##0' : '#,##0.00');
+  return { row: row };
 }
 
 function apiDeleteTxn_(req) {

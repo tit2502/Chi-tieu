@@ -20,8 +20,10 @@
     disp: LS.get('disp', 'AUD'),
     month: null,
     today: L.ymd(new Date()),
-    q: { card: LS.get('lastCard', ''), type: 'Chi', text: '', cat: '', date: '' },
+    q: { card: LS.get('lastCard', ''), type: 'Chi', text: '', cat: '', date: '', note: '' },
     transfers: null,
+    all: null,
+    f: { q: '', month: '', card: '', type: '', cat: '', limit: 50 },
     tripSel: ''
   };
   state.month = L.monthKey(state.today);
@@ -62,6 +64,7 @@
     setSync('busy');
     return api('bootstrap').then(function (data) {
       state.data = data;
+      state.all = null;
       state.today = L.ymd(new Date());
       if (!(state.cfg && state.cfg.demo)) LS.set('cache', data);
       setSync('');
@@ -197,12 +200,10 @@
       '<div class="amt ' + cls + '">' + sign + money(t.amount, t.cur) + '<small>≈ ' + money(L.convert(t.amount, t.cur, alt, t.rate), alt) + '</small></div></div>';
   }
 
-  function viewToday() {
+  function entryCard() {
     var d = D(), q = state.q;
     if (!q.card || !cardByName(q.card)) q.card = d.cards[0] ? d.cards[0].name : '';
-    var h = allowanceCards() + alertsHtml();
-
-    h += '<div class="card"><h3>Nhập nhanh</h3>' +
+    return '<div class="card"><h3>Ghi giao dịch</h3>' +
       '<input id="q-text" placeholder="phở 65k · coffee 5.5 · grab 1tr2" autocomplete="off" enterkeyhint="done" value="' + esc(q.text) + '">' +
       '<div class="chips" id="q-cards">' + d.cards.map(function (c) {
         return '<button class="chip' + (c.name === q.card ? ' on' : '') + '" data-act="pick-card" data-v="' + esc(c.name) + '">' + esc(c.name) + ' <small>' + c.currency + '</small></button>';
@@ -210,8 +211,14 @@
       '<div class="row"><div class="seg" id="q-type"><button class="' + (q.type === 'Chi' ? 'on' : '') + '" data-act="pick-type" data-v="Chi">Chi</button>' +
       '<button class="' + (q.type === 'Thu' ? 'on' : '') + '" data-act="pick-type" data-v="Thu">Thu</button></div>' +
       '<select id="q-cat">' + categoryOptions(q.type, q.cat) + '</select></div>' +
+      '<input id="q-note" placeholder="Ghi chú (tùy chọn)" style="margin-top:8px" value="' + esc(q.note) + '">' +
       '<div class="preview" id="q-preview"></div>' +
       '<div class="row"><input type="date" id="q-date" value="' + esc(q.date || state.today) + '"><button class="btn primary fixed" id="q-save" data-act="save-txn">Lưu</button></div></div>';
+  }
+
+  function viewToday() {
+    var d = D();
+    var h = allowanceCards() + alertsHtml() + entryCard();
 
     var fr = (d.frequent || []);
     if (fr.length) {
@@ -248,16 +255,16 @@
     if (!(p.amount > 0)) return toast('Chưa thấy số tiền hợp lệ');
     var cat = q.cat || L.matchCategory(p.desc, D().rules);
     var date = ($('#q-date') && $('#q-date').value) || state.today;
-    var payload = { card: card.name, desc: p.desc || cat || (q.type === 'Thu' ? 'Thu nhập' : 'Chi tiêu'), category: cat, type: q.type, amount: p.amount, currency: p.currency, date: date };
+    var payload = { card: card.name, desc: p.desc || cat || (q.type === 'Thu' ? 'Thu nhập' : 'Chi tiêu'), category: cat, type: q.type, amount: p.amount, currency: p.currency, date: date, note: state.q.note };
     var manualCat = q.cat && L.matchCategory(p.desc, D().rules) !== q.cat && p.desc;
 
     var unusual = q.type === 'Chi' && L.isUnusual(p.amount, p.currency, rateFor(date), cat, D().stats);
 
     var local = { row: null, date: date, time: '', card: card.name, desc: payload.desc, cat: cat, type: q.type, amount: p.amount,
-      cur: p.currency, note: '', group: card.group, rate: rateFor(date), trip: '', src: 'app' };
+      cur: p.currency, note: state.q.note, group: card.group, rate: rateFor(date), trip: '', src: 'app' };
     D().txns.push(local);
     LS.set('lastCard', card.name);
-    state.q.text = ''; state.q.cat = ''; state.q.date = '';
+    state.q.text = ''; state.q.cat = ''; state.q.date = ''; state.q.note = '';
     render();
     setSync('busy');
 
@@ -274,7 +281,7 @@
   }
 
   function openTxn(row) {
-    var t = D().txns.filter(function (x) { return String(x.row) === String(row); })[0];
+    var t = allTxns().filter(function (x) { return String(x.row) === String(row); })[0];
     if (!t) return;
     var alt = otherCur(t.cur);
     openModal('<h2>' + esc(t.desc || t.cat) + '</h2>' +
@@ -282,15 +289,108 @@
       '<p style="font-size:24px;font-weight:800;margin:10px 0 2px">' + (t.type === 'Thu' ? '+' : '-') + money(t.amount, t.cur) + '</p>' +
       '<div class="muted small">≈ ' + money(L.convert(t.amount, t.cur, alt, t.rate), alt) + ' theo tỷ giá lúc ghi 1 AUD = ' + Math.round(t.rate).toLocaleString('vi-VN') + '₫' +
       (t.trip ? '<br>Chuyến đi: ' + esc(t.trip) : '') + (t.note ? '<br>Ghi chú: ' + esc(t.note) : '') + '</div>' +
-      '<div class="row" style="margin-top:14px"><button class="btn danger" data-act="del-txn" data-row="' + t.row + '">Xóa</button><button class="btn" data-act="close">Đóng</button></div>');
+      '<div class="row" style="margin-top:14px"><button class="btn" data-act="edit-txn" data-row="' + t.row + '">Sửa</button><button class="btn danger" data-act="del-txn" data-row="' + t.row + '">Xóa</button><button class="btn" data-act="close">Đóng</button></div>');
   }
 
   function deleteTxn(row) {
-    var t = D().txns.filter(function (x) { return String(x.row) === String(row); })[0];
+    var t = allTxns().filter(function (x) { return String(x.row) === String(row); })[0];
     if (!t || !t.row) return;
     closeModal(); setSync('busy');
     api('deleteTxn', { row: t.row, desc: t.desc, amount: t.amount }).then(function () { toast('Đã xóa'); return refresh(true); })
       .catch(function (e) { setSync('err'); toast('Không xóa được: ' + e.message); });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Màn hình GIAO DỊCH (toàn bộ, cũ và mới)                             */
+  /* ------------------------------------------------------------------ */
+
+  function allTxns() { return state.all || D().txns; }
+
+  function loadAll() {
+    if (state.loadingAll) return;
+    state.loadingAll = true;
+    api('txns', {}).then(function (r) {
+      state.all = r.txns; state.loadingAll = false;
+      if (state.tab === 'txns') render();
+    }).catch(function () { state.loadingAll = false; });
+  }
+
+  function viewTxns() {
+    if (state.all === null) loadAll();
+    var d = D(), f = state.f, months = {};
+    allTxns().forEach(function (t) { months[t.date.substr(0, 7)] = 1; });
+    var mk = Object.keys(months).sort().reverse();
+    function opts(list, sel, all) {
+      return '<option value="">' + all + '</option>' + list.map(function (x) {
+        return '<option value="' + esc(x[0]) + '"' + (x[0] === sel ? ' selected' : '') + '>' + esc(x[1]) + '</option>';
+      }).join('');
+    }
+    var h = entryCard();
+    h += '<div class="card"><h3>Tất cả giao dịch' + (state.all === null ? ' · đang tải…' : '') + '</h3>' +
+      '<input id="f-q" placeholder="Tìm theo nội dung, ghi chú, thẻ, danh mục…" value="' + esc(f.q) + '">' +
+      '<div class="row" style="margin-top:8px"><select data-change="f-month">' + opts(mk.map(function (m) { return [m, m.substr(5, 2) + '/' + m.substr(0, 4)]; }), f.month, 'Mọi tháng') + '</select>' +
+      '<select data-change="f-type">' + opts([['Chi', 'Chi'], ['Thu', 'Thu']], f.type, 'Thu và chi') + '</select></div>' +
+      '<div class="row" style="margin-top:8px"><select data-change="f-card">' + opts(d.cards.map(function (c) { return [c.name, c.name]; }), f.card, 'Mọi thẻ') + '</select>' +
+      '<select data-change="f-cat">' + opts(d.categories.map(function (c) { return [c.name, c.name]; }), f.cat, 'Mọi danh mục') + '</select></div>' +
+      '<div class="row" style="margin-top:8px;align-items:center"><div id="tx-sum" class="muted small"></div>' +
+      '<div class="seg fixed" style="width:104px"><button class="' + (state.disp === 'AUD' ? 'on' : '') + '" data-act="disp-tx" data-v="AUD">AUD</button><button class="' + (state.disp === 'VND' ? 'on' : '') + '" data-act="disp-tx" data-v="VND">VND</button></div></div>' +
+      '<div id="tx-list" class="list" style="margin-top:6px"></div></div>';
+    return h;
+  }
+
+  function filteredTxns() {
+    var f = state.f, qn = L.stripAccents(f.q).trim();
+    return allTxns().filter(function (t) {
+      return (!f.month || t.date.substr(0, 7) === f.month) && (!f.card || t.card === f.card) &&
+        (!f.type || t.type === f.type) && (!f.cat || t.cat === f.cat) &&
+        (!qn || L.stripAccents([t.desc, t.note, t.card, t.cat].join(' ')).indexOf(qn) >= 0);
+    }).sort(function (a, b) {
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : ((b.row || 1e9) - (a.row || 1e9));
+    });
+  }
+
+  var WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+  function drawTxnList() {
+    var el = $('#tx-list'); if (!el) return;
+    var list = filteredTxns(), gm = L.categoryGroupMap(D().categories), cur = state.disp, inT = 0, outT = 0;
+    list.forEach(function (t) {
+      var k = L.kindOf(t, gm);
+      if (k === 'in') inT += L.tIn(t, cur); else if (k === 'out') outT += L.tIn(t, cur);
+    });
+    $('#tx-sum').innerHTML = '<b>' + list.length + '</b> giao dịch<br>Thu ' + money(inT, cur) + ' · Chi ' + money(outT, cur);
+    if (!list.length) { el.innerHTML = '<div class="empty">Không có giao dịch phù hợp.</div>'; return; }
+    var visible = list.slice(0, state.f.limit), html = '', day = '', dayOut = {};
+    visible.forEach(function (t) { if (L.kindOf(t, gm) === 'out') dayOut[t.date] = (dayOut[t.date] || 0) + L.tIn(t, cur); });
+    visible.forEach(function (t) {
+      if (t.date !== day) {
+        day = t.date;
+        html += '<div class="item" style="background:var(--bg);margin:10px -14px 0;padding:6px 14px"><div class="main"><b>' + WD[L.parseYmd(day).getDay()] + ' ' + shortDate(day) + '/' + day.substr(0, 4) + '</b></div>' +
+          '<div class="muted small">' + (dayOut[day] ? 'Chi ' + money(dayOut[day], cur) : '') + '</div></div>';
+      }
+      html += txnItem(t);
+    });
+    if (list.length > visible.length) html += '<button class="btn" style="width:100%;margin-top:10px" data-act="more-tx">Hiện thêm (' + (list.length - visible.length) + ' còn lại)</button>';
+    el.innerHTML = html;
+  }
+
+  function editTxnModal(row) {
+    var t = allTxns().filter(function (x) { return String(x.row) === String(row); })[0];
+    if (!t) return;
+    if (!t.row) { closeModal(); return toast('Giao dịch này chưa đồng bộ, hãy đợi vài giây rồi thử lại'); }
+    var d = D();
+    function sel(id, list, cur) {
+      return '<select id="' + id + '">' + list.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>';
+    }
+    var catOpts = '<option value="">(không có)</option>' + d.categories.map(function (c) {
+      return '<option' + (c.name === t.cat ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    openModal('<h2>Sửa giao dịch</h2><label>Nội dung</label><input id="e-desc" value="' + esc(t.desc) + '">' +
+      '<div class="row"><div><label>Số tiền</label><input id="e-amt" inputmode="decimal" value="' + t.amount + '"></div><div><label>Tiền tệ</label>' + sel('e-cur', ['AUD', 'VND'], t.cur) + '</div></div>' +
+      '<div class="row"><div><label>Thẻ</label>' + sel('e-card', d.cards.map(function (c) { return c.name; }), t.card) + '</div><div><label>Loại</label>' + sel('e-type', ['Chi', 'Thu'], t.type) + '</div></div>' +
+      '<label>Danh mục</label><select id="e-cat">' + catOpts + '</select>' +
+      '<label>Ngày</label><input id="e-date" type="date" value="' + esc(t.date) + '"><label>Ghi chú</label><input id="e-note" value="' + esc(t.note) + '">' +
+      '<div class="row" style="margin-top:14px"><button class="btn primary" data-act="save-edit" data-row="' + t.row + '">Lưu</button><button class="btn" data-act="close">Hủy</button></div>');
   }
 
   /* ------------------------------------------------------------------ */
@@ -561,7 +661,7 @@
   /* Vẽ và điều hướng                                                    */
   /* ------------------------------------------------------------------ */
 
-  var TITLES = { today: 'Hôm nay', budget: 'Ngân sách', report: 'Báo cáo', transfer: 'Chuyển tiền', more: 'Thêm' };
+  var TITLES = { today: 'Hôm nay', txns: 'Giao dịch', budget: 'Ngân sách', report: 'Báo cáo', transfer: 'Chuyển tiền', more: 'Thêm' };
 
   function render() {
     var tabs = $('#tabs');
@@ -570,9 +670,10 @@
     Array.prototype.forEach.call(tabs.querySelectorAll('button'), function (b) { b.classList.toggle('on', b.getAttribute('data-v') === state.tab); });
     $('#title').textContent = TITLES[state.tab] + (state.cfg.demo ? ' · demo' : '');
     if (!state.data) { $view.innerHTML = '<div class="empty">Đang tải dữ liệu…</div>'; return; }
-    var fn = { today: viewToday, budget: viewBudget, report: viewReport, transfer: viewTransfer, more: viewMore }[state.tab];
+    var fn = { today: viewToday, txns: viewTxns, budget: viewBudget, report: viewReport, transfer: viewTransfer, more: viewMore }[state.tab];
     $view.innerHTML = fn();
-    if (state.tab === 'today') updatePreview();
+    if (state.tab === 'today' || state.tab === 'txns') updatePreview();
+    if (state.tab === 'txns') drawTxnList();
     if (state.tab === 'transfer' && state.transfers === null) loadTransfers();
   }
 
@@ -622,6 +723,21 @@
       render(); $('#q-text').focus();
     },
     txn: function (el) { openTxn(el.getAttribute('data-row')); },
+    'edit-txn': function (el) { editTxnModal(el.getAttribute('data-row')); },
+    'more-tx': function () { state.f.limit += 50; drawTxnList(); },
+    'disp-tx': function (el) { state.disp = el.getAttribute('data-v'); LS.set('disp', state.disp); render(); },
+    'save-edit': function (el) {
+      var row = +el.getAttribute('data-row');
+      var t = allTxns().filter(function (x) { return x.row === row; })[0];
+      if (!t) return;
+      var amt = L.parseNumber(($('#e-amt').value || '').replace(/\s/g, ''));
+      if (!(amt > 0)) return toast('Số tiền không hợp lệ');
+      var p = { row: row, old: { desc: t.desc, amount: t.amount }, desc: $('#e-desc').value.trim(), amount: amt, currency: $('#e-cur').value,
+        card: $('#e-card').value, type: $('#e-type').value, category: $('#e-cat').value, date: $('#e-date').value || t.date, note: $('#e-note').value.trim() };
+      closeModal(); setSync('busy');
+      api('updateTxn', p).then(function () { toast('Đã sửa'); return refresh(true); })
+        .catch(function (e) { setSync('err'); toast(e.server ? 'Không sửa được: ' + e.message : 'Cần có mạng để sửa'); });
+    },
     'del-txn': function (el) { deleteTxn(el.getAttribute('data-row')); },
     'add-budget': function (el) { budgetModal(el.getAttribute('data-g'), ''); },
     'edit-budget': function (el) { budgetModal(el.getAttribute('data-g'), el.getAttribute('data-c')); },
@@ -706,6 +822,8 @@
     var id = ev.target.id;
     if (id === 'q-text') { state.q.text = ev.target.value; updatePreview(); }
     else if (id === 'q-date') { state.q.date = ev.target.value; }
+    else if (id === 'q-note') { state.q.note = ev.target.value; }
+    else if (id === 'f-q') { state.f.q = ev.target.value; state.f.limit = 50; drawTxnList(); }
     else if (id === 't-aud' || id === 't-fee' || id === 't-vnd' || id === 't-mkt') updateTransferCalc();
     else if (id === 'lock-pin') tryUnlock(ev.target.value);
   });
@@ -713,6 +831,9 @@
   document.addEventListener('change', function (ev) {
     if (ev.target.id === 'q-cat') { state.q.cat = ev.target.value; updatePreview(); }
     else if (ev.target.getAttribute && ev.target.getAttribute('data-change') === 'trip') { state.tripSel = ev.target.value; render(); }
+    else if (ev.target.getAttribute && /^f-/.test(ev.target.getAttribute('data-change') || '')) {
+      state.f[ev.target.getAttribute('data-change').substr(2)] = ev.target.value; state.f.limit = 50; drawTxnList();
+    }
   });
 
   document.addEventListener('keydown', function (ev) {

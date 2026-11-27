@@ -135,6 +135,17 @@
           rate: RATE, trip: '', src: 'app' });
         return { row: db.nextRow - 1, category: cat };
       }
+      case 'txns': return { txns: JSON.parse(JSON.stringify(db.txns)) };
+      case 'updateTxn': {
+        var cd = db.cards.filter(function (c) { return c.name === req.card; })[0];
+        db.txns.forEach(function (t) {
+          if (t.row === req.row) {
+            t.card = req.card; t.desc = req.desc; t.cat = req.category; t.type = req.type; t.amount = Number(req.amount);
+            t.cur = req.currency; t.date = req.date || t.date; t.note = req.note || ''; t.group = cd ? cd.group : t.group;
+          }
+        });
+        return { row: req.row };
+      }
       case 'deleteTxn':
         db.txns = db.txns.filter(function (t) { return t.row !== req.row; });
         return { deleted: req.row };

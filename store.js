@@ -74,6 +74,7 @@ function normTxn(x) {
   if (x.link) t.link = x.link;
   if (x.rec) t.rec = true;
   if (x.sy) t.sy = 1;
+  if (x.syo) t.syo = x.syo;
   return t;
 }
 const txnKey = (t) => [t.date, t.time, t.card, t.amount, t.cur, t.type, t.desc].join('|');

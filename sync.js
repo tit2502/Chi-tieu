@@ -5,13 +5,14 @@ const syKey = (t) => [t.date, t.time || '', t.card, syR2(t.amount), t.cur, t.typ
 function syCfg() { return S.sync && S.sync.url && S.sync.token ? S.sync : null; }
 function syNote(msg) { if (S.sync) { S.sync.status = msg; S.sync.statusAt = Date.now(); } }
 
-// ghi nhớ giao dịch đã đồng bộ nhưng bị sửa/xóa trong app → lần kéo sau không đưa dòng cũ trong sheet quay lại
-function syncForget(t) {
-  if (!t || !t.sy || !S.sync) return;
+// Xóa/sửa giao dịch đã có trong sheet: ghi nhớ để lần đồng bộ sau xóa/sửa đúng dòng đó
+function syDelete(t) {
+  if (!t || !(t.sy || t.syo) || !S.sync) return;
   S.sync.dead = S.sync.dead || [];
-  S.sync.dead.push(syKey(t));
-  delete t.sy;
+  S.sync.dead.push(t.syo || syKey(t));      // khóa của dòng đang nằm trong sheet
 }
+function syEdited(old, nu) { if (old && (old.sy || old.syo)) nu.syo = old.syo || syKey(old); }
+function syMark(t) { if (t.sy) { t.syo = syKey(t); delete t.sy; } }
 
 async function syCall(cfg, body) {
   const u = cfg.url.trim();
@@ -59,6 +60,17 @@ async function syncNow(manual) {
   const cfg = syCfg(); if (!cfg || SY.busy) return null;
   SY.busy = true; SY.lastTry = Date.now();
   try {
+    // 1) xóa / sửa tại chỗ những dòng đã có trong sheet
+    const dels = (S.sync.dead || []).slice(), ups = S.txns.filter((t) => t.syo);
+    let deleted = 0, updated = 0;
+    if (dels.length || ups.length) {
+      const r0 = await syCall(cfg, { dels, ups: ups.map((t) => ({ old: t.syo, txn: syPayload(t) })) });
+      S.sync.dead = S.sync.dead.slice(dels.length);
+      deleted = r0.deleted || 0; updated = r0.updated || 0;
+      ups.forEach((t, j) => { const res = (r0.upRes || [])[j]; if (res === 'updated') t.sy = 1; delete t.syo; });   // 'missing' → sẽ được thêm mới ở bước 3
+      saveNow();
+    }
+    // 2) kéo dòng mới từ sheet
     const got = await syCall(cfg, null);
     const added = syApplyRemote(got.txns || []);
     const todo = S.txns.filter((t) => !t.sy);
@@ -70,11 +82,11 @@ async function syncNow(manual) {
       pushed += r.added || 0;
     }
     cfg.last = Date.now();
-    syNote('OK · kéo ' + added + ' · đẩy ' + pushed);
+    syNote('OK · kéo ' + added + ' · gửi ' + pushed + (updated ? ' · sửa ' + updated : '') + (deleted ? ' · xóa ' + deleted : ''));
     saveNow();
     if (typeof render === 'function') render();
-    if (manual && typeof toast === 'function') toast('Đã đồng bộ: nhận ' + added + ', gửi ' + pushed);
-    return { added, pushed };
+    if (manual && typeof toast === 'function') toast('Đã đồng bộ: nhận ' + added + ', gửi ' + pushed + (updated ? ', sửa ' + updated : '') + (deleted ? ', xóa ' + deleted : ''));
+    return { added, pushed, updated, deleted };
   } catch (e) {
     syNote('Lỗi: ' + (e && e.message || e));
     saveNow();
@@ -87,7 +99,7 @@ async function syncNow(manual) {
 // tự đồng bộ sau mỗi lần lưu (khi còn giao dịch chưa gửi)
 function syncSoon() {
   const cfg = syCfg();
-  if (!cfg || !cfg.auto || SY.busy || !S.txns.some((t) => !t.sy)) return;
+  if (!cfg || !cfg.auto || SY.busy || !(S.txns.some((t) => !t.sy) || (cfg.dead || []).length)) return;
   clearTimeout(SY.timer); SY.timer = setTimeout(() => syncNow(false), 4000);
 }
 function syncOnOpen() {

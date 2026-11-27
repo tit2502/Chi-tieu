@@ -1,16 +1,16 @@
 /**
  * CỔNG ĐỒNG BỘ giữa app "Chi tiêu AUD · VND" và sheet GiaoDich của bạn.
  * - App kéo (đọc) các giao dịch trong sheet, gồm cả khoản tự ghi từ thông báo ngân hàng.
- * - App đẩy (thêm) các giao dịch nhập tay lên cuối sheet. Không bao giờ xóa hay sửa dòng cũ.
+ * - App đẩy giao dịch nhập tay lên cuối sheet; sửa/xóa trong app được áp dụng đúng dòng đó (khớp ngày, giờ, thẻ, số tiền, tiền tệ, loại).
  * - Tìm cột theo TÊN tiêu đề (Ngày, Giờ, Thẻ / Tài khoản, Nội dung…), nên không phụ thuộc vị trí cột.
  *
  * DÙNG: tạo dự án Apps Script MỚI (script.google.com → Dự án mới), dán file này vào,
- * sửa 2 dòng TOKEN và SHEET_ID bên dưới, rồi Triển khai → Ứng dụng web
+ * sửa 2 dòng CT_TOKEN và CT_SHEET_ID bên dưới, rồi Triển khai → Ứng dụng web
  * (Thực thi với tư cách: Tôi · Người có quyền truy cập: Bất kỳ ai).
  */
-const TOKEN = 'DOI-CHUOI-NAY-THANH-MAT-KHAU-RIENG-CUA-BAN';
-const SHEET_ID = 'DAN-ID-GOOGLE-SHEET-VAO-DAY';   // đoạn giữa /d/ và /edit trong địa chỉ sheet
-const SHEET_NAME = 'GiaoDich';
+const CT_TOKEN = 'hoan2502';
+const CT_SHEET_ID = 'DAN-ID-GOOGLE-SHEET-VAO-DAY';   // đoạn giữa /d/ và /edit trong địa chỉ sheet
+const CT_SHEET_NAME = 'GiaoDich';
 
 const DAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
@@ -21,10 +21,10 @@ function out_(o) {
 function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
-    if (p.token !== TOKEN) return out_({ ok: false, error: 'Sai token' });
-    if (p.action === 'ping') return out_({ ok: true, sheet: SHEET_NAME });
-    const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-    if (!sh) return out_({ ok: false, error: 'Không thấy sheet tên "' + SHEET_NAME + '"' });
+    if (p.token !== CT_TOKEN) return out_({ ok: false, error: 'Sai token' });
+    if (p.action === 'ping') return out_({ ok: true, sheet: CT_SHEET_NAME });
+    const sh = SpreadsheetApp.openById(CT_SHEET_ID).getSheetByName(CT_SHEET_NAME);
+    if (!sh) return out_({ ok: false, error: 'Không thấy sheet tên "' + CT_SHEET_NAME + '"' });
     const L = layout_(sh);
     return out_({ ok: true, txns: readRows_(sh, L, p.from || '') });
   } catch (err) {
@@ -37,10 +37,34 @@ function doPost(e) {
   try {
     lock.waitLock(20000);
     const body = JSON.parse(e.postData.contents);
-    if (body.token !== TOKEN) return out_({ ok: false, error: 'Sai token' });
-    const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-    if (!sh) return out_({ ok: false, error: 'Không thấy sheet tên "' + SHEET_NAME + '"' });
+    if (body.token !== CT_TOKEN) return out_({ ok: false, error: 'Sai token' });
+    const sh = SpreadsheetApp.openById(CT_SHEET_ID).getSheetByName(CT_SHEET_NAME);
+    if (!sh) return out_({ ok: false, error: 'Không thấy sheet tên "' + CT_SHEET_NAME + '"' });
     const L = layout_(sh);
+    const stats = { updated: 0, deleted: 0 };
+    const upRes = [], delRes = [];
+    // 1) SỬA tại chỗ các dòng đã có (khớp theo khóa cũ)
+    const ups = body.ups || [];
+    if (ups.length) {
+      const used = {};
+      const rows = readRows_(sh, L, '');
+      ups.forEach(function (u) {
+        const hit = rows.filter(function (r) { return !used[r.row] && key_(r) === u.old; })[0];
+        if (!hit) { upRes.push('missing'); return; }
+        used[hit.row] = 1; writeCells_(sh, L, hit.row, [u.txn]); upRes.push('updated'); stats.updated++;
+      });
+    }
+    // 2) XÓA dòng (mỗi khóa xóa đúng 1 dòng, xóa từ dưới lên để không lệch số dòng)
+    const dels = body.dels || [];
+    if (dels.length) {
+      const rows2 = readRows_(sh, L, ''), take = [], used2 = {};
+      dels.forEach(function (k) {
+        const hit = rows2.filter(function (r) { return !used2[r.row] && key_(r) === k; })[0];
+        if (!hit) { delRes.push('missing'); return; }
+        used2[hit.row] = 1; take.push(hit.row); delRes.push('deleted'); stats.deleted++;
+      });
+      take.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+    }
     const list = body.txns || [];
     // đếm các dòng đã có (cùng ngày, giờ, thẻ, số tiền, tiền tệ, loại) để không ghi trùng
     const have = {};
@@ -52,7 +76,7 @@ function doPost(e) {
       else { fresh.push(t); results.push('added'); }
     });
     if (fresh.length) writeRows_(sh, L, fresh);
-    return out_({ ok: true, results: results, added: fresh.length });
+    return out_({ ok: true, results: results, added: fresh.length, upRes: upRes, delRes: delRes, updated: stats.updated, deleted: stats.deleted });
   } catch (err) {
     return out_({ ok: false, error: String(err && err.message || err) });
   } finally {
@@ -147,6 +171,7 @@ function readRows_(sh, L, from) {
       card: String(get(vals[i], 'card')).trim(),
       desc: String(get(vals[i], 'desc')),
       cat: String(get(vals[i], 'cat')).trim(),
+      row: L.headerRow + 1 + i,
       type: String(get(vals[i], 'type')).trim() === 'Thu' ? 'Thu' : 'Chi',
       amount: amount,
       cur: String(get(vals[i], 'cur')).trim() === 'AUD' ? 'AUD' : 'VND',
@@ -169,12 +194,9 @@ function mondayOf_(iso) {
   d.setUTCDate(d.getUTCDate() - back);
   return d.getUTCFullYear() + '-' + pad_(d.getUTCMonth() + 1) + '-' + pad_(d.getUTCDate());
 }
-function writeRows_(sh, L, list) {
-  const c = L.col, start = lastDataRow_(sh, L) + 1, n = list.length;
-  const need = start + n - 1 - sh.getMaxRows();
-  if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need);
-  const colVals = {};
-  const put = function (k, f) { if (c[k] !== undefined) colVals[k] = list.map(function (t) { return [f(t)]; }); };
+function colVals_(L, list) {
+  const c = L.col, out = {};
+  const put = function (k, f) { if (c[k] !== undefined) out[k] = list.map(function (t) { return [f(t)]; }); };
   put('date', function (t) { return t.date; });                        // chuỗi ISO: Sheets tự nhận là ngày
   put('time', function (t) { return t.time ? t.time + ':00' : ''; });
   put('dow', function (t) { const p = t.date.split('-').map(Number); return DAYS[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()]; });
@@ -189,14 +211,22 @@ function writeRows_(sh, L, list) {
   put('note', function (t) { return t.note || ''; });
   put('group', function (t) { return t.group || ''; });
   put('kind', function (t) { return t.kind || ''; });
-  Object.keys(colVals).forEach(function (k) {
-    sh.getRange(start, c[k] + 1, n, 1).setValues(colVals[k]);
-  });
+  return out;
+}
+function writeCells_(sh, L, row, list) {
+  const cv = colVals_(L, list);
+  Object.keys(cv).forEach(function (k) { sh.getRange(row, L.col[k] + 1, list.length, 1).setValues(cv[k]); });
+}
+function writeRows_(sh, L, list) {
+  const start = lastDataRow_(sh, L) + 1, n = list.length;
+  const need = start + n - 1 - sh.getMaxRows();
+  if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need);
+  writeCells_(sh, L, start, list);
 }
 
 /** Chạy hàm này MỘT LẦN trong trình soạn thảo để cấp quyền và kiểm tra cấu hình. */
 function kiemTra() {
-  const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+  const sh = SpreadsheetApp.openById(CT_SHEET_ID).getSheetByName(CT_SHEET_NAME);
   const L = layout_(sh);
   Logger.log('Dòng tiêu đề: ' + L.headerRow + ' · cột: ' + JSON.stringify(L.col));
   Logger.log('Số giao dịch đọc được: ' + readRows_(sh, L, '').length);

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Chi tiêu">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Chi tiêu</title>
+</head>
+<body>
+<header id="top">
+  <div id="title">Chi tiêu</div>
+  <div id="top-actions">
+    <span id="sync" class="sync" title="Trạng thái đồng bộ"></span>
+    <button class="icon-btn" data-act="refresh" aria-label="Tải lại">⟳</button>
+  </div>
+</header>
+<main id="view"></main>
+<nav id="tabs">
+  <button data-act="tab" data-v="today">Hôm nay</button>
+  <button data-act="tab" data-v="budget">Ngân sách</button>
+  <button data-act="tab" data-v="report">Báo cáo</button>
+  <button data-act="tab" data-v="transfer">Chuyển tiền</button>
+  <button data-act="tab" data-v="more">Thêm</button>
+</nav>
+<div id="toast" role="status"></div>
+<div id="modal-root"></div>
+<div id="lock" hidden></div>
+<script src="lib.js"></script>
+<script src="demo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

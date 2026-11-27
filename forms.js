@@ -133,7 +133,7 @@ function saveTx(again) {
   } else {
     if (!T.cat) return toast('Chọn danh mục');
     const obj = normTxn({ id: T.id, date: T.date, time: T.time, card: T.card, desc: T.desc, cat: T.cat, type: T.type, amount: amt, cur: T.cur, note: T.note, balance: T.balance, vndActual: parseNum(T.vndActual, 'VND') || 0, link: T.link, rec: T.rec });
-    if (T.id) { const i = S.txns.findIndex((x) => x.id === T.id); if (i >= 0) S.txns[i] = obj; } else S.txns.push(obj);
+    if (T.id) { const i = S.txns.findIndex((x) => x.id === T.id); if (i >= 0) { syncForget(S.txns[i]); S.txns[i] = obj; } } else S.txns.push(obj);
     if (S.settings.autoLearn && T.desc) {
       const m = CORE.matchRule(S.rules, T.desc), key = CORE.ruleKeyFrom(T.desc);
       if (!m && key.length >= 3) S.rules.push({ kw: key, cat: T.cat });
@@ -148,6 +148,7 @@ function delTx() {
   const t = S.txns.find((x) => x.id === TX.id); if (!t) return;
   const n = t.link ? S.txns.filter((x) => x.link === t.link).length : 1;
   ask(n > 1 ? 'Xóa giao dịch chuyển tiền này (' + n + ' dòng liên quan)?' : 'Xóa giao dịch này?', 'Xóa', () => {
+    S.txns.filter((x) => t.link ? x.link === t.link : x.id === t.id).forEach(syncForget);
     S.txns = S.txns.filter((x) => t.link ? x.link !== t.link : x.id !== t.id); save(); closeLayer('tx'); render(); toast('Đã xóa');
   }, true);
 }
@@ -206,7 +207,7 @@ function saveCard() {
   const obj = { name, bank: F.bank || '', kind: F.kind, cur: F.cur, group: F.group, keys: F.keys || '', open: parseNum(F.open, F.cur) };
   if (F._old) {
     const i = S.cards.findIndex((c) => c.name === F._old); S.cards[i] = obj;
-    if (F._old !== name) { S.txns.forEach((t) => { if (t.card === F._old) t.card = name; }); S.recs.forEach((r) => { if (r.card === F._old) r.card = name; }); UI.fcards = UI.fcards.map((x) => x === F._old ? name : x); }
+    if (F._old !== name) { S.txns.forEach((t) => { if (t.card === F._old) { syncForget(t); t.card = name; } }); S.recs.forEach((r) => { if (r.card === F._old) r.card = name; }); UI.fcards = UI.fcards.map((x) => x === F._old ? name : x); }
   } else S.cards.push(obj);
   save(); closeLayer('cardform'); closeLayer('cardview'); render(); toast('Đã lưu thẻ');
 }
@@ -293,6 +294,19 @@ function pageSheet() {
       <div class="card pad"><input type="file" id="file" accept=".json,.csv,application/json,text/csv" style="width:100%;margin-bottom:10px"><textarea id="paste" class="inp" rows="3" placeholder="…hoặc dán nội dung JSON / CSV vào đây"></textarea><button class="btn" style="margin-top:8px;width:100%" data-a="import">Nhập</button></div>
       <button class="btn danger" style="width:100%;margin-top:12px" data-a="wipe">Xóa toàn bộ dữ liệu</button>`);
   }
+  if (p === 'sync') {
+    const y = S.sync || {}, un = S.txns.filter((t) => !t.sy).length;
+    const st = y.status ? `${esc(y.status)}${y.statusAt ? ' · ' + new Date(y.statusAt).toLocaleString('vi-VN') : ''}` : 'Chưa đồng bộ lần nào';
+    return back('Đồng bộ Google Sheet', `<div class="card pad"><div class="kv"><span>Trạng thái</span><b style="text-align:right;max-width:65%">${st}</b></div><div class="kv"><span>Chờ gửi lên sheet</span><b>${un}</b></div>
+      <small style="display:block;margin-top:6px">App kéo mọi dòng trong sheet GiaoDich (kể cả khoản Phím tắt ghi từ thông báo ngân hàng) và gửi giao dịch nhập tay lên cuối sheet. Chỉ thêm dòng mới; sửa/xóa trong app không đổi dòng đã có trong sheet.</small></div>
+      <div class="sect">Kết nối</div><div class="card pad">
+      <div class="field"><label>Địa chỉ ứng dụng web (Apps Script)</label><input class="inp" id="syurl" value="${esc(y.url || '')}" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <div class="field" style="margin-top:8px"><label>Mật khẩu (TOKEN trong Code.gs)</label><input class="inp" id="sytoken" value="${esc(y.token || '')}" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <button class="btn" style="width:100%;margin-top:10px" data-a="sysave">Lưu & đồng bộ ngay</button></div>
+      <div class="card list"><button class="li" data-a="sytoggle"><span class="sp"><b>Tự động đồng bộ</b><span class="sub">Khi mở app và sau mỗi lần lưu</span></span><span class="switch ${y.auto ? 'on' : ''}"></span></button>
+      <button class="li" data-a="synow"><span class="sp"><b>Đồng bộ ngay</b></span></button></div>
+      ${y.url ? '<button class="btn danger" style="width:100%;margin-top:12px" data-a="syoff">Ngắt kết nối</button>' : ''}`);
+  }
   if (p === 'help') return back('Cài lên màn hình iPhone', `<div class="card pad" style="line-height:1.6"><b>iPhone (Safari):</b><br>1. Mở địa chỉ web của app bằng <b>Safari</b>.<br>2. Bấm nút <b>Chia sẻ</b> (ô vuông có mũi tên lên).<br>3. Chọn <b>Thêm vào Màn hình chính</b> → Thêm.<br>Mở từ biểu tượng mới: app chạy toàn màn hình, dùng được cả khi không có mạng.<br><br><b>Android (Chrome):</b> menu ⋮ → Cài đặt ứng dụng.<br><br><b>Mẹo nhập nhanh:</b> bấm + → gõ số tiền → chạm thẻ → gõ tên cửa hàng, danh mục tự điền theo quy tắc.</div>`);
   return '';
 }
@@ -355,6 +369,10 @@ function act(a, el) {
     case 'catsave': { const n = (F.name || '').trim(); if (!n) return toast('Nhập tên'); if (S.cats.some((c) => c.name === n)) return toast('Đã có danh mục này'); S.cats.push({ group: F.group, name: n, desc: '' }); save(); closeLayer('catform'); render(); break; }
     case 'catdel': S.cats = S.cats.filter((c) => c.name !== d.id); save(); render(); break;
     case 'page': openPage(v); break;
+    case 'sysave': { const url = ($('#syurl') || {}).value.trim(), tk = ($('#sytoken') || {}).value.trim(); if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url) || !tk) return toast('Nhập địa chỉ …/exec và mật khẩu'); S.sync.url = url; S.sync.token = tk; saveNow(); toast('Đang đồng bộ…'); syncNow(true).then(() => drawLayer()); break; }
+    case 'synow': if (!syCfg()) return toast('Chưa nhập địa chỉ và mật khẩu'); toast('Đang đồng bộ…'); syncNow(true).then(() => drawLayer()); break;
+    case 'sytoggle': S.sync.auto = !S.sync.auto; save(); drawLayer(); break;
+    case 'syoff': ask('Ngắt kết nối với Google Sheet? Giao dịch trong app vẫn giữ nguyên.', 'Ngắt', () => { S.sync.url = ''; S.sync.token = ''; S.sync.status = ''; S.txns.forEach((t) => { delete t.sy; }); S.sync.dead = []; save(); drawLayer(); render(); }, true); break;
     case 'ratefetch': toast('Đang lấy tỷ giá…'); fetchRate().then((r) => { toast(r ? '1 AUD = ' + Math.round(r).toLocaleString('vi-VN') + ' ₫' : 'Không lấy được (không có mạng?) — hãy nhập tay'); render(); }); break;
     case 'ratenowset': { const n = parseNum(($('#ratenow') || {}).value, 'VND'); if (n < 1000) return toast('Nhập tỷ giá hợp lệ'); S.rateNow = n; save(); render(); toast('Đã đặt'); break; }
     case 'ratem': openSimpleForm('rateform', { m: d.id, v: S.rates[d.id] || '' }, rateForm); break;
@@ -408,10 +426,11 @@ function boot() {
   render();
   if (n) toast('Đã tự ghi ' + n + ' khoản định kỳ');
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* bỏ qua */ }
+  syncOnOpen();
   if (!S.rateLog[CORE.today()]) fetchRate().then((r) => { if (r) render(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { const k = runRecurring(); if (k) { render(); toast('Đã tự ghi ' + k + ' khoản định kỳ'); } }
+    if (document.visibilityState === 'visible') { const k = runRecurring(); if (k) { render(); toast('Đã tự ghi ' + k + ' khoản định kỳ'); } syncOnOpen(); }
   });
 }
 boot();

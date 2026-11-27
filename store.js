@@ -33,7 +33,8 @@ function defaultState() {
     ],
     cats: JSON.parse(JSON.stringify(DEFAULT_CATS)),
     rules: [], rates: {}, rateBase: {}, rateLog: {}, rateNow: 18400,
-    txns: [], recs: [], budgets: []
+    txns: [], recs: [], budgets: [],
+    sync: { url: '', token: '', auto: true, last: 0, status: '', statusAt: 0, dead: [] }
   };
 }
 
@@ -48,13 +49,14 @@ function loadState() {
       const j = JSON.parse(raw);
       S = Object.assign(defaultState(), j);
       S.settings = Object.assign(defaultState().settings, j.settings || {});
+      S.sync = Object.assign(defaultState().sync, j.sync || {});
     }
   } catch (e) { storageOK = false; }
 }
 function saveNow() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); storageOK = true; } catch (e) { storageOK = false; }
 }
-function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 150); }
+function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 150); if (typeof syncSoon === 'function') syncSoon(); }
 window.addEventListener('pagehide', saveNow);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
 
@@ -71,6 +73,7 @@ function normTxn(x) {
   if (x.vndActual > 0) t.vndActual = Number(x.vndActual);
   if (x.link) t.link = x.link;
   if (x.rec) t.rec = true;
+  if (x.sy) t.sy = 1;
   return t;
 }
 const txnKey = (t) => [t.date, t.time, t.card, t.amount, t.cur, t.type, t.desc].join('|');
@@ -154,7 +157,7 @@ function importCSV(text) {
   return importJSON({ format: 'quanlychitieu-v1', txns });
 }
 
-function exportJSON() { return JSON.stringify(Object.assign({ format: 'quanlychitieu-v2', exported: new Date().toISOString() }, S, { manualRates: S.rates }), null, 1); }
+function exportJSON() { return JSON.stringify(Object.assign({ format: 'quanlychitieu-v2', exported: new Date().toISOString() }, S, { manualRates: S.rates, sync: undefined }), null, 1); }
 
 // ---------- tỷ giá tự động ----------
 async function fetchRate() {

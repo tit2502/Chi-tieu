@@ -341,7 +341,7 @@ function renderSettings() {
       <div class="li"><span class="sp"><b>Tiền tệ hiển thị</b><span class="sub">Phần Úc & tổng quy đổi</span></span><div class="pill" style="background:var(--chip)"><button data-a="disp" data-v="AUD" class="${disp() === 'AUD' ? 'on' : ''}" style="color:var(--text)">AUD</button><button data-a="disp" data-v="VND" class="${disp() === 'VND' ? 'on' : ''}" style="color:var(--text)">VND</button></div></div>
       <div class="li"><span class="sp"><b>Tuần bắt đầu từ</b><span class="sub">File Excel dùng Thứ Hai</span></span><div class="pill" style="background:var(--chip)"><button data-a="wstart" data-v="1" class="${S.settings.weekStart === 1 ? 'on' : ''}" style="color:var(--text)">Thứ Hai</button><button data-a="wstart" data-v="0" class="${S.settings.weekStart === 0 ? 'on' : ''}" style="color:var(--text)">Chủ Nhật</button></div></div>
       <button class="li" data-a="toggle" data-v="autoLearn"><span class="sp"><b>Tự học quy tắc</b><span class="sub">Nhớ danh mục cho lần nhập sau</span></span><span class="switch ${S.settings.autoLearn ? 'on' : ''}"></span></button></div>
-    <div class="card list">${li('data', 'Sao lưu & dữ liệu', S.txns.length + ' giao dịch' + (storageOK ? '' : ' · ⚠ không lưu được trên trình duyệt này'))}${li('help', 'Cài lên màn hình iPhone', 'Hướng dẫn')}</div>`;
+    <div class="card list">${li('sync', 'Đồng bộ Google Sheet', S.sync && S.sync.url ? (S.sync.status || 'Đã kết nối') : 'Chưa kết nối')}${li('data', 'Sao lưu & dữ liệu', S.txns.length + ' giao dịch' + (storageOK ? '' : ' · ⚠ không lưu được trên trình duyệt này'))}${li('help', 'Cài lên màn hình iPhone', 'Hướng dẫn')}</div>`;
 }
 
 // ---------- tab bar & render ----------

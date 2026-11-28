@@ -295,10 +295,10 @@ function pageSheet() {
       <button class="btn danger" style="width:100%;margin-top:12px" data-a="wipe">Xóa toàn bộ dữ liệu</button>`);
   }
   if (p === 'sync') {
-    const y = S.sync || {}, un = S.txns.filter((t) => !t.sy).length + (y.dead || []).length;
+    const y = S.sync || {}, un = S.txns.filter(syPending).length + (y.dels || []).length;
     const st = y.status ? `${esc(y.status)}${y.statusAt ? ' · ' + new Date(y.statusAt).toLocaleString('vi-VN') : ''}` : 'Chưa đồng bộ lần nào';
     return back('Đồng bộ Google Sheet', `<div class="card pad"><div class="kv"><span>Trạng thái</span><b style="text-align:right;max-width:65%">${st}</b></div><div class="kv"><span>Chờ gửi lên sheet</span><b>${un}</b></div>
-      <small style="display:block;margin-top:6px">App kéo mọi dòng trong sheet GiaoDich (kể cả khoản Phím tắt ghi từ thông báo ngân hàng) và gửi giao dịch nhập tay lên cuối sheet. Chỉ thêm dòng mới; xóa hoặc sửa một giao dịch trong app cũng xóa hoặc sửa đúng dòng đó trong sheet.</small></div>
+      <small style="display:block;margin-top:6px">App kéo mọi dòng trong sheet GiaoDich (kể cả khoản Phím tắt ghi từ thông báo ngân hàng) và gửi giao dịch nhập tay lên cuối sheet. Sửa hoặc xóa ở app hay ở sheet đều được cập nhật sang bên kia (nếu sửa cùng một dòng ở cả hai nơi, bản trong app thắng).</small></div>
       <div class="sect">Kết nối</div><div class="card pad">
       <div class="field"><label>Địa chỉ ứng dụng web (Apps Script)</label><input class="inp" id="syurl" value="${esc(y.url || '')}" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       <div class="field" style="margin-top:8px"><label>Mật khẩu (TOKEN trong Code.gs)</label><input class="inp" id="sytoken" value="${esc(y.token || '')}" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
@@ -306,6 +306,11 @@ function pageSheet() {
       <div class="card list"><button class="li" data-a="sytoggle"><span class="sp"><b>Tự động đồng bộ</b><span class="sub">Khi mở app và sau mỗi lần lưu</span></span><span class="switch ${y.auto ? 'on' : ''}"></span></button>
       <button class="li" data-a="synow"><span class="sp"><b>Đồng bộ ngay</b></span></button></div>
       ${y.url ? '<button class="btn danger" style="width:100%;margin-top:12px" data-a="syoff">Ngắt kết nối</button>' : ''}`);
+  }
+  if (p === 'theme') {
+    const cur = S.settings.theme || 'coral';
+    return back('Màu giao diện', `<div class="card pad"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">${Object.keys(THEMES).map((k) => `<button data-a="settheme" data-v="${k}" style="border:0;background:none;padding:0;text-align:center;color:var(--text);font:inherit"><span style="display:block;width:54px;height:54px;border-radius:50%;margin:0 auto 6px;background:${THEMES[k][0]};box-shadow:${k === cur ? '0 0 0 3px var(--card),0 0 0 6px ' + THEMES[k][0] : 'none'}"></span><small>${THEMES[k][2]}</small></button>`).join('')}</div>
+      <small style="display:block;margin-top:14px">Màu được lưu trong máy, nên không mất khi bạn cập nhật file app lên GitHub.</small></div>`);
   }
   if (p === 'help') return back('Cài lên màn hình iPhone', `<div class="card pad" style="line-height:1.6"><b>iPhone (Safari):</b><br>1. Mở địa chỉ web của app bằng <b>Safari</b>.<br>2. Bấm nút <b>Chia sẻ</b> (ô vuông có mũi tên lên).<br>3. Chọn <b>Thêm vào Màn hình chính</b> → Thêm.<br>Mở từ biểu tượng mới: app chạy toàn màn hình, dùng được cả khi không có mạng.<br><br><b>Android (Chrome):</b> menu ⋮ → Cài đặt ứng dụng.<br><br><b>Mẹo nhập nhanh:</b> bấm + → gõ số tiền → chạm thẻ → gõ tên cửa hàng, danh mục tự điền theo quy tắc.</div>`);
   return '';
@@ -371,8 +376,9 @@ function act(a, el) {
     case 'page': openPage(v); break;
     case 'sysave': { const url = ($('#syurl') || {}).value.trim(), tk = ($('#sytoken') || {}).value.trim(); if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url) || !tk) return toast('Nhập địa chỉ …/exec và mật khẩu'); S.sync.url = url; S.sync.token = tk; saveNow(); toast('Đang đồng bộ…'); syncNow(true).then(() => drawLayer()); break; }
     case 'synow': if (!syCfg()) return toast('Chưa nhập địa chỉ và mật khẩu'); toast('Đang đồng bộ…'); syncNow(true).then(() => drawLayer()); break;
+    case 'settheme': S.settings.theme = v; applyTheme(); save(); drawLayer(); render(); break;
     case 'sytoggle': S.sync.auto = !S.sync.auto; save(); drawLayer(); break;
-    case 'syoff': ask('Ngắt kết nối với Google Sheet? Giao dịch trong app vẫn giữ nguyên.', 'Ngắt', () => { S.sync.url = ''; S.sync.token = ''; S.sync.status = ''; S.txns.forEach((t) => { delete t.sy; delete t.syo; }); S.sync.dead = []; save(); drawLayer(); render(); }, true); break;
+    case 'syoff': ask('Ngắt kết nối với Google Sheet? Giao dịch trong app vẫn giữ nguyên.', 'Ngắt', () => { S.sync.url = ''; S.sync.token = ''; S.sync.status = ''; S.txns.forEach((t) => { delete t.sid; delete t.sh; }); S.sync.dels = []; save(); drawLayer(); render(); }, true); break;
     case 'ratefetch': toast('Đang lấy tỷ giá…'); fetchRate().then((r) => { toast(r ? '1 AUD = ' + Math.round(r).toLocaleString('vi-VN') + ' ₫' : 'Không lấy được (không có mạng?) — hãy nhập tay'); render(); }); break;
     case 'ratenowset': { const n = parseNum(($('#ratenow') || {}).value, 'VND'); if (n < 1000) return toast('Nhập tỷ giá hợp lệ'); S.rateNow = n; save(); render(); toast('Đã đặt'); break; }
     case 'ratem': openSimpleForm('rateform', { m: d.id, v: S.rates[d.id] || '' }, rateForm); break;
@@ -419,8 +425,15 @@ document.addEventListener('change', (e) => {
 $('#fab').addEventListener('click', () => act('fab', $('#fab')));
 
 // ================= KHỞI ĐỘNG =================
+const THEMES = { coral: ['#e2574c', '#c9473d', 'San hô'], blue: ['#3b82f6', '#2f6fdb', 'Xanh dương'], green: ['#1f9d73', '#178862', 'Xanh lá'], purple: ['#7c6ae6', '#6652d4', 'Tím'],
+  orange: ['#e8871a', '#cf7410', 'Cam'], teal: ['#0ea5b7', '#0b8d9d', 'Xanh ngọc'], pink: ['#d946a8', '#c0338f', 'Hồng'], dark: ['#3a3d4a', '#2b2d37', 'Than'] };
+function applyTheme() {
+  const t = THEMES[S.settings.theme] || THEMES.coral, r = document.documentElement.style;
+  r.setProperty('--brand', t[0]); r.setProperty('--brand2', t[1]);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', t[0]);
+}
 function boot() {
-  loadState();
+  loadState(); applyTheme();
   const n = runRecurring();
   UI.wk = CORE.weekStart(CORE.today(), S.settings.weekStart);
   render();

@@ -24,7 +24,7 @@ const DEFAULT_CATS = [
 function defaultState() {
   return {
     v: 1,
-    settings: { disp: 'AUD', weekStart: 1, autoLearn: true, lastBackup: 0 },
+    settings: { disp: 'AUD', weekStart: 1, autoLearn: true, lastBackup: 0, theme: 'coral' },
     cards: [
       { name: 'Thẻ Úc', bank: 'Ngân hàng Úc', kind: 'Debit', cur: 'AUD', group: 'Úc', keys: '', open: 0 },
       { name: 'Thẻ Việt Nam', bank: 'Ngân hàng Việt Nam', kind: 'Debit', cur: 'VND', group: 'Việt Nam', keys: '', open: 0 },
@@ -34,7 +34,7 @@ function defaultState() {
     cats: JSON.parse(JSON.stringify(DEFAULT_CATS)),
     rules: [], rates: {}, rateBase: {}, rateLog: {}, rateNow: 18400,
     txns: [], recs: [], budgets: [],
-    sync: { url: '', token: '', auto: true, last: 0, status: '', statusAt: 0, dead: [] }
+    sync: { url: '', token: '', auto: true, last: 0, status: '', statusAt: 0, dels: [] }
   };
 }
 
@@ -73,8 +73,8 @@ function normTxn(x) {
   if (x.vndActual > 0) t.vndActual = Number(x.vndActual);
   if (x.link) t.link = x.link;
   if (x.rec) t.rec = true;
-  if (x.sy) t.sy = 1;
-  if (x.syo) t.syo = x.syo;
+  if (x.sid) t.sid = x.sid;
+  if (x.sh) t.sh = x.sh;
   return t;
 }
 const txnKey = (t) => [t.date, t.time, t.card, t.amount, t.cur, t.type, t.desc].join('|');
